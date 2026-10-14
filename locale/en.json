@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Project Memory",
+    "description": "Local per-project cross-conversation memory, sharing the Claude Code memory-compass store (MEMORY.md index + topic files). No cloud, no telemetry."
+  }
+}

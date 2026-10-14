@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "项目记忆",
+    "description": "本机跨对话项目记忆：自动注入 MEMORY.md 索引 + memory_read/write/search 工具，与 Claude Code 记忆罗盘共库。无云端、无遥测。"
+  }
+}
