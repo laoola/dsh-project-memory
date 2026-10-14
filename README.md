@@ -45,13 +45,15 @@ dsh plugin --profile web add D:\GitCode\dshplugin\project-memory
 
 **使用日志**：每次注入/读写向 `<journalDir>/<编码项目>.jsonl` 追加一行（`inject` / `read` / `write` / `search` / `extract` 事件，含时间戳与会话 id）。仅本机文件，最佳努力（写失败不影响主流程），供 30 天使用频率指标统计，无遥测。
 
-**全自动提取（US-4，M2）**：会话空闲（`agent/status → idle` 持续 `extractIdleMs`）后经 `agent.followup()` 唤醒一轮"提取轮"（一条 `source.form = 'extract'` 的 user 消息，成为独立回合），模型回顾本场对话，把跨会话结论经 `memory_write` 落盘；无够格结论则不写任何东西。提取判断含负面清单（对齐 Claude Code 官方自动记忆）：能从代码、规格、文档直接推导的不写；CLAUDE.md / AGENTS.md 等指令文件已载明的不写。护栏：
+**全自动提取（US-4，M2）**：会话空闲（`agent/status → idle` 持续 `extractIdleMs`）后经 `agent.followup()` 唤醒一轮"提取轮"（一条 `source.form = 'extract'` 的 user 消息，成为独立回合），模型回顾本场对话，分【结论路】与【习惯路】双路提取（见下）；两路均无产出则不写任何东西。提取判断含负面清单（对齐 Claude Code 官方自动记忆）：能从代码、规格、文档直接推导的不写；CLAUDE.md / AGENTS.md 等指令文件已载明的不写。护栏：
 
 - 每会话限 1 轮：内存占坑 + journal `extract/followup` 事件 durable 查重，宿主重启后不重复提取；
 - 轮数闸：本进程观测到的对话轮数 < `extractMinTurns` 不布防（`agent/inbox/claimed` 的 turn 序号计）。缺省 1（2026-10-14 用户裁决：不漏优先——单轮对话有结论也要提取；无结论由提取轮自行判定，回复「无新增记忆」不落盘）；
 - 子代理、无 cwd 会话一律跳过；`agent/running`（新输入）随时撤防重计时；
 - 唤醒失败（如会话恰好释放）记 `extract/error` 事件并可重试，不影响会话；
 - `agent/created` 也预布防：恢复的会话若无新活动，空闲后同样补提一轮。
+
+**双路提取（结论 + 习惯）**：提取轮为「结论 + 用户习惯」双路。【结论路】提取跨会话持久结论（用户裁决、部署事实、踩坑教训、验证过的收口），写入项目记忆主题文件；【习惯路】若对话暴露了用户的行为模式（下指令的固定风格、明确纠正过 AI 的行为、反复出现的操作序列偏好），追加写入独立的 `user-habits` 主题文件（与结论分文件；每条带日期、出现次数与来源，同模式更新不重复建条）。习惯条目只记录不执行——是否升格进 AGENTS.md 等指令文件由用户人工确认。关闭方式不变：`cordis.patch.yml` 设 `extractEnabled: false` 整轮关停（结论路与习惯路一并关闭）。
 
 已知限制：轮数按本进程观测计（`agent/inbox/claimed` 的 turn 序号），但缺省 `minTurns=1` 下恢复的会话在 `agent/created` 即满足轮数闸、空闲后照常提取，重启间隙不漏；若调大 `extractMinTurns`，重启后需再观测满该轮数新对话才布防。长空闲后提取轮会在会话里短暂活动一回合，属 PRD 决策 3 明确接受的体感（「不漏」优先）。
 
@@ -67,7 +69,7 @@ dsh plugin --profile web add D:\GitCode\dshplugin\project-memory
 node --test D:\GitCode\dshplugin\project-memory\test\paths.test.mjs D:\GitCode\dshplugin\project-memory\test\store.test.mjs D:\GitCode\dshplugin\project-memory\test\extract.test.mjs
 ```
 
-覆盖：路径编码（纯 ASCII / 含中文实测案例 / 幂等）、目录解析（精确 / 模糊 / 无目录）、写入（新建/追加/索引幂等/参数校验/索引体量阈值/frontmatter modified 刷新与不强加）、检索、M2 提取状态机（空闲触发 / 每会话限 1 轮含 durable 查重 / 轮数闸 / 子代理与无 cwd 跳过 / running 撤防 / 失败重试 / 缺省 minTurns=1）。共 22 例。
+覆盖：路径编码（纯 ASCII / 含中文实测案例 / 幂等）、目录解析（精确 / 模糊 / 无目录）、写入（新建/追加/索引幂等/参数校验/索引体量阈值/frontmatter modified 刷新与不强加）、检索、M2 提取状态机（空闲触发 / 每会话限 1 轮含 durable 查重 / 轮数闸 / 子代理与无 cwd 跳过 / running 撤防 / 失败重试 / 缺省 minTurns=1）。共 23 例。
 
 ## 卸载
 

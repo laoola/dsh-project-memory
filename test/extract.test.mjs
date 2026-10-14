@@ -2,7 +2,7 @@
  * M2 全自动提取状态机单测（不打宿主，fake agent + 临时 journalDir + 毫秒级空闲窗口）。
  * 覆盖：空闲触发、消息形态、每会话限 1 轮（内存 + durable）、轮数闸、
  * 缺省 minTurns=1 单轮即提取（恢复会话 created 即布防）、子代理跳过、
- * running 撤防、followup 抛错可重试（error 不计入已提取）。
+ * running 撤防、followup 抛错可重试（error 不计入已提取）、双路提示词文案（结论路/习惯路/user-habits）。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -195,4 +195,10 @@ test('配置校验：非法 idleMs/minTurns 回落缺省，extractEnabled=false 
   const ex = buildExtractor({ journalDir: await tmpJournalDir(), idleMs: -1, minTurns: 0 });
   assert.equal(ex.idleMs, 3 * 60 * 1000);
   assert.equal(ex.minTurns, 1);
+});
+
+test('EXTRACT_PROMPT 双路文案：同时含结论路、习惯路与 user-habits 字样', () => {
+  assert.ok(EXTRACT_PROMPT.includes('结论路'), '应含【结论路】标记');
+  assert.ok(EXTRACT_PROMPT.includes('习惯路'), '应含【习惯路】标记');
+  assert.ok(EXTRACT_PROMPT.includes('user-habits'), '应指向 user-habits 主题文件');
 });
