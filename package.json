@@ -2,6 +2,7 @@
   "name": "dsh-project-memory",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Local per-project cross-conversation memory for DSH, sharing the Claude Code memory-compass store (MEMORY.md index + topic files). No cloud, no telemetry.",
   "exports": {
