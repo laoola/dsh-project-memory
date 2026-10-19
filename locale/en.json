@@ -2,5 +2,52 @@
   "meta": {
     "title": "Project Memory",
     "description": "Local per-project cross-conversation memory, sharing the Claude Code memory-compass store (MEMORY.md index + topic files). No cloud, no telemetry."
+  },
+  "client": {
+    "panel": {
+      "entry": "Knowledge Base",
+      "title": "Knowledge Base",
+      "readonly": "Read-only view"
+    },
+    "sections": {
+      "global": "Global memory",
+      "projects": "Project memory",
+      "sources": "Local knowledge sources",
+      "knowledge": "Knowledge · reserved"
+    },
+    "knowledge": {
+      "reserved": "Reserved data domain: the knowledge section ships in M3"
+    },
+    "cards": {
+      "heading": "Knowledge entries",
+      "globalTitle": "Global memory",
+      "globalDesc": "Cross-project global memory and index"
+    },
+    "fold": {
+      "more": "Show {count} more projects",
+      "less": "Collapse folded projects"
+    },
+    "empty": {
+      "listTitle": "Nothing here yet",
+      "list": "No Markdown files in this section.",
+      "searchTitle": "No results",
+      "search": "Nothing found for \"{query}\" — try a shorter keyword."
+    },
+    "search": {
+      "placeholder": "Full-text search across sections, returns matching lines…",
+      "title": "Search results",
+      "stat": "{files} file(s) matched {lines} line(s) (host-side search, cross-section)"
+    },
+    "state": {
+      "loading": "Loading…",
+      "error": "Failed to load"
+    },
+    "doc": {
+      "back": "Back",
+      "close": "Close"
+    },
+    "meta": {
+      "count": "{projects} project memories · {sources} knowledge sources"
+    }
   }
 }

@@ -1,25 +1,45 @@
 {
   "name": "dsh-project-memory",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
-  "description": "Local per-project cross-conversation memory for DSH, sharing the Claude Code memory-compass store (MEMORY.md index + topic files). No cloud, no telemetry.",
+  "description": "Local per-project cross-conversation memory for DSH, sharing the Claude Code memory-compass store (MEMORY.md index + topic files), plus a read-only knowledge-base web panel. No cloud, no telemetry.",
   "exports": {
     ".": "./index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "index.js",
     "lib",
+    "src",
     "locale",
     "cordis.patch.yml",
+    "tsdown.config.ts",
     "README.md"
   ],
+  "scripts": {
+    "build": "tsdown -c tsdown.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.mjs\""
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
     }
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsdown": "0.22.2",
+    "typescript": "~5.7.2"
   }
 }

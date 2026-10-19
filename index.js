@@ -20,6 +20,7 @@ import { resolveMemoryDir, readIndex } from './lib/store.js';
 import { createJournal } from './lib/journal.js';
 import { buildMemoryTools } from './lib/tools.js';
 import { buildExtractor, DEFAULT_IDLE_MS, DEFAULT_MIN_TURNS } from './lib/extract.js';
+import { detectDefaultKnowledgeSources, loadProjectNameIndex, registerPanelRoutes } from './lib/routes.js';
 
 /** 声明依赖注入：访问 ctx.tools 必须显式 inject，否则激活报 "cannot get property tools without inject"。 */
 export const inject = ['tools'];
@@ -65,6 +66,9 @@ function renderInjection(index, memDir, maxChars) {
  * - extractEnabled: boolean M2 全自动提取开关（缺省 true）
  * - extractIdleMs: number   会话空闲多久后唤醒提取轮（缺省 180000 = 3 分钟）
  * - extractMinTurns: number 轮数闸：至少观测到几轮对话才布防提取（缺省 1；调大省 token 但短会话可能漏）
+ * - statusWorkspaceJson: string STATUS 枚举用 workspace.json 路径（缺省 ~/.dsh/storages/workspace.json；仅测试/特殊部署需覆盖）
+ * - knowledgeSources: Array<{id,label,description?,root}> 知识库面板「本地知识源」分区（0.2，缺省探测
+ *   ~/.agents/skills 与 ~/.dsh/docs，存在才注册；配置后完全覆盖缺省探测）
  */
 export function apply(ctx, config = {}) {
   const logger = ctx.logger ?? console;
@@ -106,7 +110,10 @@ export function apply(ctx, config = {}) {
   });
 
   // —— US-2/US-3：记忆工具集（注册即挂 effect，卸载自动清理）——
-  for (const definition of buildMemoryTools({ root, journalDir })) {
+  const statusWorkspaceJson = typeof config.statusWorkspaceJson === 'string' && config.statusWorkspaceJson
+    ? config.statusWorkspaceJson
+    : undefined;
+  for (const definition of buildMemoryTools({ root, journalDir, workspaceJsonPath: statusWorkspaceJson })) {
     ctx.effect(() => ctx.tools.register(definition), `project-memory.register(${definition.name})`);
   }
 
@@ -120,5 +127,25 @@ export function apply(ctx, config = {}) {
     logger.info?.(
       `[project-memory] 全自动提取已启用：空闲 ${Math.round(extractor.idleMs / 1000)}s 唤醒，至少 ${extractor.minTurns} 轮对话，每会话限 1 轮`,
     );
+  }
+
+  // —— 0.2 知识库面板（只读 Web 视图）：webServer 存在才挂路由，非 web profile 零影响 ——
+  // 知识源归一放在路由层（非法项跳过不抛错）；缺省探测与 apply 并行启动，首个请求前就绪。
+  // nameIndex：~/.claude.json 的历史 cwd 清单 → 编码目录名映射，给面板项目行真实项目名。
+  const knowledgeSources = config.knowledgeSources !== undefined
+    ? config.knowledgeSources
+    : detectDefaultKnowledgeSources();
+  const projectNameIndex = loadProjectNameIndex();
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['webServer'], (webCtx) => {
+      const disposeRoutes = registerPanelRoutes(webCtx, {
+        memoryRoot: root,
+        knowledgeSources,
+        nameIndex: projectNameIndex,
+        logger,
+      });
+      logger.info?.('[project-memory] 知识库面板路由已挂载（只读）：/dsh-project-memory/api/*');
+      return disposeRoutes;
+    });
   }
 }

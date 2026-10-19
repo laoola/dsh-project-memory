@@ -2,5 +2,52 @@
   "meta": {
     "title": "项目记忆",
     "description": "本机跨对话项目记忆：自动注入 MEMORY.md 索引 + memory_read/write/search 工具，与 Claude Code 记忆罗盘共库。无云端、无遥测。"
+  },
+  "client": {
+    "panel": {
+      "entry": "知识库",
+      "title": "知识库",
+      "readonly": "只读视图"
+    },
+    "sections": {
+      "global": "全局记忆",
+      "projects": "项目记忆",
+      "sources": "本地知识源",
+      "knowledge": "知识域 · 预留"
+    },
+    "knowledge": {
+      "reserved": "预留数据域：knowledge 分区将在 M3 落地"
+    },
+    "cards": {
+      "heading": "知识入口",
+      "globalTitle": "全局记忆",
+      "globalDesc": "跨项目共享的全局记忆与索引"
+    },
+    "fold": {
+      "more": "展开 其余 {count} 个项目",
+      "less": "收起折叠的项目"
+    },
+    "empty": {
+      "listTitle": "这里还是空的",
+      "list": "该分区暂无 Markdown 文件。",
+      "searchTitle": "没有找到",
+      "search": "没有找到「{query}」— 换个更短的关键词试试。"
+    },
+    "search": {
+      "placeholder": "全文检索：跨分区搜主题文件正文，返回命中行…",
+      "title": "搜索结果",
+      "stat": "共 {files} 个文件命中 {lines} 行（host 端检索，跨分区）"
+    },
+    "state": {
+      "loading": "加载中…",
+      "error": "加载失败"
+    },
+    "doc": {
+      "back": "返回",
+      "close": "关闭"
+    },
+    "meta": {
+      "count": "{projects} 个项目记忆 · {sources} 个知识源"
+    }
   }
 }
