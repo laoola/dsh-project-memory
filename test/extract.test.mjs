@@ -202,3 +202,13 @@ test('EXTRACT_PROMPT 双路文案：同时含结论路、习惯路与 user-habit
   assert.ok(EXTRACT_PROMPT.includes('习惯路'), '应含【习惯路】标记');
   assert.ok(EXTRACT_PROMPT.includes('user-habits'), '应指向 user-habits 主题文件');
 });
+
+test('EXTRACT_PROMPT 三路合流（2026-10-17 STATUS 机制）：STATUS 路存在且既有两路未被覆盖', () => {
+  assert.ok(EXTRACT_PROMPT.includes('STATUS 路'), '应含【STATUS 路】标记');
+  assert.ok(EXTRACT_PROMPT.includes('memory_status_write'), 'STATUS 路应指向 memory_status_write 工具');
+  assert.ok(EXTRACT_PROMPT.includes('三路'), '总纲应从两路升级为三路');
+  assert.ok(!EXTRACT_PROMPT.includes('两路'), '不得残留两路旧措辞');
+  // 合流红线：既有结论路/习惯路的文案原样保留
+  assert.ok(EXTRACT_PROMPT.includes('结论路') && EXTRACT_PROMPT.includes('习惯路'), '双路文案不得被 STATUS 路挤掉');
+  assert.ok(EXTRACT_PROMPT.includes('三路都没有够格'), '兜底措辞应同步为三路');
+});

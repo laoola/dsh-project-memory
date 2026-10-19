@@ -4,7 +4,7 @@ import { encodeProjectPath, fuzzyKey } from '../lib/paths.js';
 
 test('纯 ASCII：冒号与每个反斜杠替换为 -，保留大小写', () => {
   assert.equal(encodeProjectPath('D:\\GC\\Code\\DWMServer'), 'D--GC-Code-DWMServer');
-  assert.equal(encodeProjectPath('C:\\Users\\zwh\\.claude'), 'C--Users-zwh-.claude');
+  assert.equal(encodeProjectPath('C:\\Users\\demo\\.claude'), 'C--Users-demo-.claude');
 });
 
 test('含中文：非 ASCII 字符逐个 → -，盘符转小写（AGENTS.md 实测案例）', () => {
