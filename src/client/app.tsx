@@ -376,10 +376,13 @@ export function KnowledgeApp({ onClose }: { onClose?: () => void }): ReactNode {
                 type="button"
                 className={`dsh-pm-rail-sub${view.kind === 'section' && view.sectionId === project.id ? ' is-active' : ''}`}
                 onClick={() => navigate({ kind: 'section', sectionId: project.id, label })}
-                title={project.displayPath ?? project.dir}
+                title={project.pathExists === false ? `${project.displayPath ?? project.dir}（项目路径已不存在）` : (project.displayPath ?? project.dir)}
               >
                 <IconDoc size={12} />
-                <span className="dsh-pm-rail-sub-name">{truncateMiddle(label, 28)}</span>
+                <span className="dsh-pm-rail-sub-name">
+                  {truncateMiddle(label, 28)}
+                  {project.pathExists === false ? ' ⚠' : ''}
+                </span>
                 <span className="dsh-pm-rail-badge">{project.fileCount}</span>
               </button>
             );
@@ -392,10 +395,13 @@ export function KnowledgeApp({ onClose }: { onClose?: () => void }): ReactNode {
                 type="button"
                 className={`dsh-pm-rail-sub${view.kind === 'section' && view.sectionId === project.id ? ' is-active' : ''}`}
                 onClick={() => navigate({ kind: 'section', sectionId: project.id, label })}
-                title={project.displayPath ?? project.dir}
+                title={project.pathExists === false ? `${project.displayPath ?? project.dir}（项目路径已不存在）` : (project.displayPath ?? project.dir)}
               >
                 <IconDoc size={12} />
-                <span className="dsh-pm-rail-sub-name">{truncateMiddle(label, 28)}</span>
+                <span className="dsh-pm-rail-sub-name">
+                  {truncateMiddle(label, 28)}
+                  {project.pathExists === false ? ' ⚠' : ''}
+                </span>
                 <span className="dsh-pm-rail-badge">{project.fileCount}</span>
               </button>
             );

@@ -38,18 +38,20 @@ dsh plugin --profile web add <本仓库检出路径>
 
 ## 行为
 
-**自动注入（US-1）**：`agent/created` 时按会话 cwd 定位记忆目录，存在 `MEMORY.md` 则以 user 消息（`source.kind = 'project-memory'`）注入索引+使用约定。每会话至多一次；子代理（`origin === 'subagent'` 或 `delegationDepth > 0`）、无 cwd、无记忆目录一律静默跳过；注入失败仅告警，不影响会话。
+**自动注入（US-1）**：`agent/created` 时按会话 cwd 定位记忆目录，存在 `MEMORY.md` 则以 user 消息（`source.kind = 'project-memory'`）注入索引+使用约定。每会话至多一次；子代理（`origin === 'subagent'` 或 `delegationDepth > 0`）、无 cwd、无记忆目录一律静默跳过（旧布局告警除外，见下）；注入失败仅告警，不影响会话。
+
+**旧布局迁移告警（2026-10-20）**：无 `memory/` 记忆目录、但 `<memoryRoot>/<slug>/` 根下存在旧版 `MEMORY.md`（Claude Code 旧版布局）时，注入一条迁移提示（每会话一次，`source.form = 'legacy'`），指引把文件移入同目录 `memory/` 子目录；移入后提示自动消失。
 
 **工具（US-2/US-3）**，均以当前会话 cwd 定位项目，无 cwd 时明确报错：
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `memory_read` | `topic?` | 读 `MEMORY.md` 索引；给 `topic` 则读对应主题文件全文 |
-| `memory_write` | `topic`, `content`, `summary` | 写主题文件（新建自动加 `# topic` 头）并同步更新索引行（同 slug 幂等替换）。索引接近/超过载入上限（200 行或 25KB，对齐 Claude Code）时在结果中警告并要求精简（超限截断会让后半索引静默丢失）；主题文件已有 frontmatter 时自动刷新 `modified` 时间戳，无 frontmatter 不强加。空参数明确报错，fs 错误原样抛出 |
+| `memory_write` | `topic`, `content`, `summary` | 写主题文件（新建自动加 `# topic` 头）并同步更新索引行（同 slug 幂等替换）。索引接近/超过载入上限（200 行或 25KB，对齐 Claude Code）时在结果中警告并要求精简（超限截断会让后半索引静默丢失），并引导优先归档到 `<主题>-archive.md`（索引只留一行指针）；主题文件已有 frontmatter 时自动刷新 `modified` 时间戳，无 frontmatter 不强加。空参数明确报错，fs 错误原样抛出 |
 | `memory_search` | `query`, `limit?=50` | 跨主题文件大小写不敏感检索，返回 `文件:行号: 内容` |
 | `memory_status_write` | `summary`, `stage?`, `milestones?[]`, `inProgress?[]`, `nextStart?`, `keyDecisions?[]`, `constraints?[]`, `source?` | 更新项目状态快照 `STATUS.md`（2026-10-17 STATUS 机制合流新增，详见下节）。`summary` 必填（≤160 字符，注入 MEMORY.md 首行）；未传字段沿用旧值，内容无变化不重写不滚动 |
 
-**使用日志**：每次注入/读写向 `<journalDir>/<编码项目>.jsonl` 追加一行（`inject` / `read` / `write` / `search` / `status` / `extract` 事件，含时间戳与会话 id）。仅本机文件，最佳努力（写失败不影响主流程），供 30 天使用频率指标统计，无遥测。
+**使用日志**：每次注入/读写向 `<journalDir>/<编码项目>.jsonl` 追加一行（`inject`（含旧布局告警 `form: 'legacy'`）/ `read` / `write` / `search` / `status` / `extract` 事件，含时间戳与会话 id）。仅本机文件，最佳努力（写失败不影响主流程），供 30 天使用频率指标统计，无遥测。
 
 **全自动提取（US-4，M2）**：会话空闲（`agent/status → idle` 持续 `extractIdleMs`）后经 `agent.followup()` 唤醒一轮"提取轮"（一条 `source.form = 'extract'` 的 user 消息，成为独立回合），模型回顾本场对话，分【结论路】【习惯路】【STATUS 路】三路提取（见下）；三路均无产出则不写任何东西。提取判断含负面清单（对齐 Claude Code 官方自动记忆）：能从代码、规格、文档直接推导的不写；CLAUDE.md / AGENTS.md 等指令文件已载明的不写。护栏：
 
@@ -75,7 +77,7 @@ dsh plugin --profile web add <本仓库检出路径>
 
 ## 知识库面板（0.2，只读 Web 视图）
 
-Web GUI 侧栏底部「知识库」入口：四分区只读视图——**全局记忆**（`_global/memory`）、**项目记忆**（按更新时间排序，冷项目折叠）、**本地知识源**（缺省探测 `~/.agents/skills` 与 `~/.dsh/docs`，存在才注册）、**知识域 · 预留**（置灰，M3）。顶栏全文检索跨分区返回命中行（高亮），点击进入 Markdown 阅读视图；全程无任何编辑入口。
+Web GUI 侧栏底部「知识库」入口：四分区只读视图——**全局记忆**（`_global/memory`）、**项目记忆**（按更新时间排序，冷项目折叠）、**本地知识源**（缺省探测 `~/.agents/skills` 与 `~/.dsh/docs`，存在才注册）、**知识域 · 预留**（置灰，M3）。顶栏全文检索跨分区返回命中行（高亮），点击进入 Markdown 阅读视图；全程无任何编辑入口。项目行若在 `~/.claude.json` 有真实路径记录，面板会探测该目录是否仍存在（`pathExists`），已删除的项目显示 ⚠ 标注（2026-10-20 废弃项目标注），便于识别废弃记忆目录。
 
 - **架构**：host 直读磁盘（`lib/routes.js`），无第二索引、无同步、无写入端点；client 半（`src/client/` TSX）经 tsdown 构建为 `lib/client.js`，以 web shell 的 lazy-CJS 契约加载（`window.__ModuleLoader__.load`），官方插槽优先、宿主不支持时降级为侧栏 DOM 注入。
 - **运行时零新依赖**：react/tsdown/typescript 全部是 devDependencies（构建期），client bundle 的 react 由宿主提供（external）。
@@ -83,7 +85,7 @@ Web GUI 侧栏底部「知识库」入口：四分区只读视图——**全局�
 
 | 端点 | 说明 |
 |---|---|
-| `GET /dsh-project-memory/api/overview` | 分区概览（全局/项目列表含 mtime/源列表） |
+| `GET /dsh-project-memory/api/overview` | 分区概览（全局/项目列表含 mtime、`pathExists` 废弃标注/源列表） |
 | `GET /dsh-project-memory/api/list?section=<id>` | 分区文件清单（标题+一行摘要；分区 id：`global` / `p:<编码目录>` / `s:<源id>`） |
 | `GET /dsh-project-memory/api/file?path=<abs>` | 读单个 `.md`（路径防护：仅记忆根与已配置知识源根下，穿越返回 `path_denied`） |
 | `GET /dsh-project-memory/api/search?q=<query>` | 跨分区命中行（大小写不敏感，每文件至多 3 条，上限 2000 文件/300 行） |
@@ -107,7 +109,7 @@ pnpm run build # tsdown → lib/client.js（产物随包分发）
 pnpm test   # node --test test/*.test.mjs
 ```
 
-覆盖：路径编码（纯 ASCII / 含中文实测案例 / 幂等）、目录解析（精确 / 模糊 / 无目录）、写入（新建/追加/索引幂等/参数校验/索引体量阈值/frontmatter modified 刷新与不强加）、检索、M2 提取状态机（空闲触发 / 每会话限 1 轮含 durable 查重 / 轮数闸 / 子代理与无 cwd 跳过 / running 撤防 / 失败重试 / 缺省 minTurns=1）、STATUS 机制（七字段渲染与待补 / created+MEMORY.md 注入 / unchanged 不重写 / prev 双级滚动 / 5 秒抢写 / 膨胀硬上限 / 注入幂等 / 枚举交集与排除 / workspaceId 兜底 / parse 往返 / 工具集注册）、知识库面板路由层（分区概览 / 清单与索引摘要映射 / SKILL frontmatter / 读文件路径穿越防护 / 跨分区检索 / envelope 与只读 405 / 404 兜底）。共 54 例。
+覆盖：路径编码（纯 ASCII / 含中文实测案例 / 幂等）、目录解析（精确 / 模糊 / 无目录 / 旧布局探测）、写入（新建/追加/索引幂等/参数校验/索引体量阈值/frontmatter modified 刷新与不强加）、检索、M2 提取状态机（空闲触发 / 每会话限 1 轮含 durable 查重 / 轮数闸 / 子代理与无 cwd 跳过 / running 撤防 / 失败重试 / 缺省 minTurns=1）、STATUS 机制（七字段渲染与待补 / created+MEMORY.md 注入 / unchanged 不重写 / prev 双级滚动 / 5 秒抢写 / 膨胀硬上限 / 注入幂等 / 枚举交集与排除 / workspaceId 兜底 / parse 往返 / 工具集注册）、知识库面板路由层（分区概览 / 清单与索引摘要映射 / SKILL frontmatter / 读文件路径穿越防护 / 跨分区检索 / envelope 与只读 405 / 404 兜底 / 废弃项目 `pathExists` 标注）、健壮性（注入截断头尾双端保留 / 旧布局迁移提示文案 / 索引超限归档引导文案）。共 60 例。
 
 ## 卸载
 

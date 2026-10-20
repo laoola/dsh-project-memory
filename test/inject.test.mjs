@@ -4,7 +4,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderInjection } from '../index.js';
+import { renderInjection, renderLegacyNotice } from '../index.js';
 
 const MEM = 'C:\\proj\\demo\\memory';
 
@@ -33,4 +33,11 @@ test('长索引：头尾双端保留，STATUS 首行与最新尾部条目都不�
 test('空索引：返回空串（不注入）', () => {
   assert.equal(renderInjection('', MEM, 1000), '');
   assert.equal(renderInjection('   ', MEM, 1000), '');
+});
+
+test('旧布局迁移提示：给出目录与目标 memory\\ 子目录', () => {
+  const notice = renderLegacyNotice('C:\\Users\\demo\\.claude\\projects\\D--old');
+  assert.ok(notice.includes('D--old'));
+  assert.ok(notice.includes('memory\\'), '应提示移入 memory 子目录');
+  assert.ok(notice.includes('旧布局'));
 });

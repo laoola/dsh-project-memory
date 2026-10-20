@@ -126,3 +126,4 @@ dsh --profile web --dump-config-schema   # 可见本插件 Config Schema
 
 - **v0.2**（2026-10-14）：M1/M2 验收闭环收口；决策 5 落地（索引超限反馈 / 提取负面清单 / frontmatter modified 刷新）；`extractMinTurns` 缺省改 1（不漏优先）。
 - **v0.3**（2026-10-19 补录）：补记三批已交付增量——①习惯路提取（2026-10-14 晚 C-1，`user-habits` 分文件）；②STATUS.md 机制与 `memory_status_write`（2026-10-16 拍板 / 10-17 合流）；③只读知识库面板（0.2，暂缓池 UI 面板出池，仅只读版）。PRD 主体（第 1–8 节）不变，功能细节以 README 为准。
+- **v0.3.1**（2026-10-20）：健壮性收口——①P0 注入截断改头尾双端保留（commit ab8af81，头部 STATUS 指针 + 尾部最新条目/主题组优先）；②P1 三项：旧布局记忆迁移告警（根下 `MEMORY.md` → 引导移入 `memory/`）、索引超限归档引导（`<主题>-archive.md` 留一行指针）、废弃项目记忆目录面板标注（`pathExists` 探测）。

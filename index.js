@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { resolveMemoryDir, readIndex } from './lib/store.js';
+import { resolveMemoryDir, resolveLegacyMemoryDir, readIndex } from './lib/store.js';
 import { createJournal } from './lib/journal.js';
 import { buildMemoryTools } from './lib/tools.js';
 import { buildExtractor, DEFAULT_IDLE_MS, DEFAULT_MIN_TURNS } from './lib/extract.js';
@@ -81,6 +81,19 @@ export function renderInjection(index, memDir, maxChars) {
     .join('\n');
 }
 
+/** 旧布局迁移提示（2026-10-20）：Claude Code 旧版把 MEMORY.md 放项目目录根下，现役只认 memory/ 子目录。 */
+export function renderLegacyNotice(legacyDir) {
+  const target = path.join(legacyDir, 'memory');
+  return [
+    '[project-memory] 检测到旧布局记忆（Claude Code 旧版位置，现役版本不会自动注入）：',
+    legacyDir,
+    '',
+    '该目录根下有 MEMORY.md，但缺少 memory\\ 子目录。Claude Code 与 DSH 现役版本都只读 memory\\ 子目录。',
+    `请把 MEMORY.md 与主题 .md 文件移入 ${target}\\（新建该子目录即可），移入后本提示自动消失。`,
+    '（历史备份可保留原位置副本，不会占用注入预算。）',
+  ].join('\n');
+}
+
 /**
  * 插件入口。Config（cordis.patch.yml 用户层可覆盖，键见 README）：
  * - memoryRoot: string    记忆根目录（缺省探测：~/.claude/projects → ~/.dsh/memory/projects）
@@ -112,7 +125,20 @@ export function apply(ctx, config = {}) {
       if (injected.has(sessionId)) return;
 
       const memDir = await resolveMemoryDir(root, header.cwd);
-      if (!memDir) return; // 无记忆目录：静默跳过（US-1 验收第 2 条）
+      if (!memDir) {
+        // 旧布局探测：根下 MEMORY.md（Claude Code 旧版布局）现役不可见 → 注入一次迁移提示
+        const legacyDir = await resolveLegacyMemoryDir(root, header.cwd);
+        if (!legacyDir) return; // 无记忆目录：静默跳过（US-1 验收第 2 条）
+        agent.inject({
+          id: randomUUID(),
+          role: 'user',
+          content: [{ type: 'text', text: renderLegacyNotice(legacyDir) }],
+          source: { kind: 'project-memory', form: 'legacy' },
+        });
+        injected.add(sessionId);
+        await createJournal({ journalDir, cwd: header.cwd })({ event: 'inject', form: 'legacy', session: sessionId, dir: legacyDir });
+        return;
+      }
       const index = await readIndex(memDir);
       if (index === null) return;
 

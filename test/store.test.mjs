@@ -4,8 +4,9 @@ import { promises as fs } from 'node:fs';
 import { mkdtemp, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { resolveMemoryDir } from '../lib/store.js';
+import { resolveMemoryDir, resolveLegacyMemoryDir } from '../lib/store.js';
 import { writeMemory, searchMemory, indexLimitStatus } from '../lib/store.js';
+import { encodeProjectPath } from '../lib/paths.js';
 
 test('resolveMemoryDir：精确命中编码目录', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'pm-'));
@@ -63,6 +64,19 @@ test('searchMemory：大小写不敏感命中并带文件与行号', async () =>
   assert.equal(hits.length, 1);
   assert.equal(hits[0].file, 'toolchain.md');
   assert.ok(hits[0].line >= 1);
+});
+
+test('resolveLegacyMemoryDir：根下 MEMORY.md 旧布局命中；新布局优先/无记忆返回 null', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'pm-legacy-'));
+  const slug = path.join(root, encodeProjectPath('D:\\proj'));
+  await mkdir(slug, { recursive: true });
+  await fs.writeFile(path.join(slug, 'MEMORY.md'), '# 旧布局索引\n', 'utf8');
+  assert.equal(await resolveLegacyMemoryDir(root, 'D:\\proj'), slug);
+  // 新布局（memory/ 子目录）出现后以新布局为准：不再告警
+  await mkdir(path.join(slug, 'memory'), { recursive: true });
+  assert.equal(await resolveLegacyMemoryDir(root, 'D:\\proj'), null);
+  // 完全没有该项目目录 → null
+  assert.equal(await resolveLegacyMemoryDir(root, 'D:\\nope'), null);
 });
 
 test('indexLimitStatus：行数/字节阈值（near 80%，over 上限）', () => {

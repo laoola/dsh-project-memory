@@ -62,6 +62,8 @@ export interface ProjectEntry {
   name?: string;
   /** 真实原生路径（home 缩写形式，如 ~\GitCode\dsh）。仅 nameIndex 命中时存在。 */
   displayPath?: string;
+  /** 项目目录当前是否存在（P1 废弃项目标注）：仅 nameIndex 命中时给出；false = 路径已不存在。 */
+  pathExists?: boolean;
   fileCount: number;
   mtimeMs: number;
 }

@@ -100,9 +100,32 @@ test('overview：全局/项目/源计数与排序', async () => {
   assert.equal(view.projects.length, 1);
   assert.equal(view.projects[0].id, 'p:D--proj-a');
   assert.equal(view.projects[0].fileCount, 2);
+  assert.equal(view.projects[0].pathExists, undefined); // 无 nameIndex 记录：不给存在性字段
   assert.equal(view.sources.length, 1);
   assert.equal(view.sources[0].fileCount, 2);
   assert.equal(view.memoryRoot, path.resolve(root));
+});
+
+test('overview.pathExists：nameIndex 命中的真实路径探测存在性（废弃项目标注 P1）', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'pm-gone-'));
+  const aliveDir = path.join(root, 'D--alive', 'memory');
+  const goneDir = path.join(root, 'D--gone', 'memory');
+  for (const dir of [aliveDir, goneDir]) {
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'MEMORY.md'), '# 索引\n\n- [x](x.md) — 条目\n', 'utf8');
+  }
+  const alivePath = path.join(root, 'still-here');
+  await mkdir(alivePath, { recursive: true });
+  const gonePath = path.join(root, 'deleted-project'); // 不创建：模拟项目目录已删除
+  const nameIndex = new Map([
+    ['D--alive', { name: 'still-here', displayPath: '~\\still-here', path: alivePath }],
+    ['D--gone', { name: 'deleted-project', displayPath: '~\\deleted-project', path: gonePath }],
+  ]);
+  const api = createPanelApi({ memoryRoot: root, knowledgeSources: [], nameIndex });
+  const view = await api.overview();
+  const byDir = new Map(view.projects.map((p) => [p.dir, p]));
+  assert.equal(byDir.get('D--alive').pathExists, true);
+  assert.equal(byDir.get('D--gone').pathExists, false);
 });
 
 test('list(memory)：索引摘要映射到主题文件行', async () => {
