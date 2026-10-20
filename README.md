@@ -21,7 +21,7 @@ dsh plugin --profile web add <本仓库检出路径>
 |---|---|---|---|
 | `memoryRoot` | string | 探测式 | 记忆根目录。缺省：`~/.claude/projects` 存在则沿用（与 Claude Code 共库），否则 `~/.dsh/memory/projects` |
 | `journalDir` | string | `~/.dsh/memory/journal` | JSONL 使用日志目录 |
-| `injectMaxChars` | number | 4000 | 注入索引的最大字符数，超长截断并提示用工具细读 |
+| `injectMaxChars` | number | 4000 | 注入索引的最大字符数。超长时**头尾双端保留**（STATUS 指针与末尾最新条目/主题组优先），中间省略并提示用 `memory_read` 细读——避免旧版"保头丢尾"把最新记忆截掉 |
 | `extractEnabled` | boolean | true | M2 全自动提取开关 |
 | `extractIdleMs` | number | 180000 | 会话空闲多久后唤醒提取轮（毫秒） |
 | `extractMinTurns` | number | 1 | 轮数闸：至少观测到几轮对话才布防提取（缺省 1 = 不因短会话漏；调大可省 token 但短会话可能漏） |

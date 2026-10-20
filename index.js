@@ -34,14 +34,37 @@ function detectDefaultRoot() {
   return path.join(homedir(), '.dsh', 'memory', 'projects');
 }
 
-/** 渲染注入文本：索引行 + 使用约定。超长截断并提示用工具细读。 */
-function renderInjection(index, memDir, maxChars) {
+/** 渲染注入文本：索引行 + 使用约定。超长时头尾双端保留（STATUS 指针与末尾最新条目/主题组优先），中间省略提示细读。 */
+export function renderInjection(index, memDir, maxChars) {
   let idx = String(index).trim();
   if (!idx) return '';
   let truncated = false;
   if (idx.length > maxChars) {
-    idx = idx.slice(0, maxChars);
-    truncated = true;
+    // 双端保留：头部 60%（STATUS 指针 + 早期条目），尾部 40%（最新条目/最后主题组）。
+    // 按行边界取舍，避免截断半行；省略行预留 60 字符预算。
+    const lines = idx.split('\n');
+    const headBudget = Math.floor(maxChars * 0.6);
+    const tailBudget = Math.max(0, maxChars - headBudget - 60);
+    const head = [];
+    let used = 0;
+    for (const line of lines) {
+      if (used + line.length + 1 > headBudget) break;
+      head.push(line);
+      used += line.length + 1;
+    }
+    const tail = [];
+    used = 0;
+    for (let i = lines.length - 1; i >= head.length; i -= 1) {
+      const line = lines[i];
+      if (used + line.length + 1 > tailBudget) break;
+      tail.unshift(line);
+      used += line.length + 1;
+    }
+    const omitted = lines.length - head.length - tail.length;
+    truncated = omitted > 0;
+    if (truncated) {
+      idx = [...head, `…（中间 ${omitted} 行已省略，全文用 memory_read 查看）`, ...tail].join('\n');
+    }
   }
   return [
     '[project-memory] 本项目存在跨对话记忆（与 Claude Code 记忆罗盘共库）：',
