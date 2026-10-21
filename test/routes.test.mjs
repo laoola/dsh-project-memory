@@ -128,6 +128,24 @@ test('overview.pathExists：nameIndex 命中的真实路径探测存在性（废
   assert.equal(byDir.get('D--gone').pathExists, false);
 });
 
+test('loadProjectNameIndex 模糊回退：正斜杠键 + 小写盘符记忆目录仍命中（P1 修复）', async () => {
+  // 真实缺口的复现：~/.claude.json 键是 D:/GC/Code/DWM，存量记忆目录是 d--GC-Code-DWM（盘符小写）
+  const home = await mkdtemp(path.join(tmpdir(), 'pm-home-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'pm-fuzzy-'));
+  await writeFile(path.join(home, '.claude.json'), JSON.stringify({ projects: { 'D:/GC/Code/DWM': {} } }), 'utf8');
+  const memDir = path.join(root, 'd--GC-Code-DWM', 'memory');
+  await mkdir(memDir, { recursive: true });
+  await writeFile(path.join(memDir, 'MEMORY.md'), '# 索引\n', 'utf8');
+  const realPath = path.join(root, 'dwm-project');
+  await mkdir(realPath, { recursive: true });
+  const nameIndex = loadProjectNameIndex(home);
+  const api = createPanelApi({ memoryRoot: root, knowledgeSources: [], nameIndex });
+  const view = await api.overview();
+  assert.equal(view.projects.length, 1);
+  assert.equal(view.projects[0].pathExists, true);
+  assert.equal(view.projects[0].name, 'DWM'); // 真实项目名也经模糊键穿透
+});
+
 test('list(memory)：索引摘要映射到主题文件行', async () => {
   const { root, sources } = await makeTree();
   const api = createPanelApi({ memoryRoot: root, knowledgeSources: sources });

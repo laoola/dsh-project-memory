@@ -77,7 +77,7 @@ dsh plugin --profile web add <本仓库检出路径>
 
 ## 知识库面板（0.2，只读 Web 视图）
 
-Web GUI 侧栏底部「知识库」入口：四分区只读视图——**全局记忆**（`_global/memory`）、**项目记忆**（按更新时间排序，冷项目折叠）、**本地知识源**（缺省探测 `~/.agents/skills` 与 `~/.dsh/docs`，存在才注册）、**知识域 · 预留**（置灰，M3）。顶栏全文检索跨分区返回命中行（高亮），点击进入 Markdown 阅读视图；全程无任何编辑入口。项目行若在 `~/.claude.json` 有真实路径记录，面板会探测该目录是否仍存在（`pathExists`），已删除的项目显示 ⚠ 标注（2026-10-20 废弃项目标注），便于识别废弃记忆目录。
+Web GUI 侧栏底部「知识库」入口：四分区只读视图——**全局记忆**（`_global/memory`）、**项目记忆**（按更新时间排序，冷项目折叠）、**本地知识源**（缺省探测 `~/.agents/skills` 与 `~/.dsh/docs`，存在才注册）、**知识域 · 预留**（置灰，M3）。顶栏全文检索跨分区返回命中行（高亮），点击进入 Markdown 阅读视图；全程无任何编辑入口。项目行若在 `~/.claude.json` 有真实路径记录，面板会探测该目录是否仍存在（`pathExists`），已删除的项目显示 ⚠ 标注（2026-10-20 废弃项目标注）；`~/.claude.json` 的正斜杠键与存量目录的盘符大小写漂移（如 `D:/GC/Code/DWM` vs `d--GC-Code-DWM`）按模糊键回退匹配，精确编码优先。
 
 - **架构**：host 直读磁盘（`lib/routes.js`），无第二索引、无同步、无写入端点；client 半（`src/client/` TSX）经 tsdown 构建为 `lib/client.js`，以 web shell 的 lazy-CJS 契约加载（`window.__ModuleLoader__.load`），官方插槽优先、宿主不支持时降级为侧栏 DOM 注入。
 - **运行时零新依赖**：react/tsdown/typescript 全部是 devDependencies（构建期），client bundle 的 react 由宿主提供（external）。
