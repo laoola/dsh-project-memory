@@ -84,6 +84,7 @@ test('memory_write 归档通道：成功归档并引导 archive 读；多余参�
   const r = await byName['memory_write'].execute({ topic: 'note', mode: 'archive' }, exec);
   assert.equal(r.ok, true);
   assert.ok(r.text.includes('archive'), '文案应引导 archive 读法');
+  assert.match(r.text, /archived: \d{4}-\d{2}-\d{2}/, '归档文案应含 archived 日期');
   await fs.access(path.join(memDir, ARCHIVE_DIR, 'note.md'));
 
   await assert.rejects(
