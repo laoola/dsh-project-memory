@@ -13,10 +13,10 @@
  *    见 lib/extract.js。
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, promises as fsPromises } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { resolveMemoryDir, resolveLegacyMemoryDir, readIndex } from './lib/store.js';
+import { resolveMemoryDir, resolveLegacyMemoryDir, readIndex, globalMemoryDir, GLOBAL_HABITS_FILE } from './lib/store.js';
 import { createJournal } from './lib/journal.js';
 import { buildMemoryTools } from './lib/tools.js';
 import { buildExtractor, DEFAULT_IDLE_MS, DEFAULT_MIN_TURNS } from './lib/extract.js';
@@ -26,6 +26,8 @@ import { detectDefaultKnowledgeSources, loadProjectNameIndex, registerPanelRoute
 export const inject = ['tools'];
 
 const DEFAULT_INJECT_MAX_CHARS = 4000;
+/** 全局习惯注入预算（P0-4）：0 = 禁用全局习惯注入；文件超 4 倍上限时写入侧提示精简。 */
+const DEFAULT_GLOBAL_HABITS_MAX_CHARS = 600;
 
 /** 探测式默认记忆根目录（PRD 决策 4）：有 Claude Code 存量则共库，否则 DSH 自有目录。 */
 function detectDefaultRoot() {
@@ -95,10 +97,64 @@ export function renderLegacyNotice(legacyDir) {
 }
 
 /**
+ * 全局习惯注入段（P0-4）：读 <root>/_global/memory/user-habits.md 正文（去 frontmatter），
+ * 按行截断 ≤ maxChars（0 = 禁用）。历史偏好参考语义，不覆盖当前指令。
+ */
+export async function renderGlobalHabitsSection(root, maxChars) {
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return '';
+  let raw;
+  try {
+    raw = await fsPromises.readFile(path.join(globalMemoryDir(root), GLOBAL_HABITS_FILE), 'utf8');
+  } catch {
+    return '';
+  }
+  const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim();
+  if (!body) return '';
+  const lines = body.split(/\r?\n/);
+  const out = [];
+  let used = 0;
+  for (const line of lines) {
+    if (used + line.length + 1 > maxChars) break;
+    out.push(line);
+    used += line.length + 1;
+  }
+  return [
+    '## 全局工作习惯（历史偏好参考，不覆盖当前指令）',
+    out.join('\n'),
+    out.length < lines.length ? `（已截断，全文用 memory_read(topic='user-habits', scope='global') 查看）` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * 会话注入编排（P0-4 抽出可测）：项目索引与全局习惯的合并决策。
+ * 返回 {kind, text, dir?}：kind = 'recall'（项目索引，可含全局习惯尾段）
+ * | 'legacy'（旧布局迁移提示）| 'global'（仅全局习惯：项目无目录/无索引/索引渲染为空时仍独立注入）
+ * | null（无任何可注入，静默跳过）。
+ */
+export async function buildSessionInjection({ root, cwd, injectMaxChars, globalHabitsMaxChars }) {
+  const globalText = await renderGlobalHabitsSection(root, globalHabitsMaxChars);
+  const memDir = await resolveMemoryDir(root, cwd);
+  if (!memDir) {
+    const legacyDir = await resolveLegacyMemoryDir(root, cwd);
+    if (!legacyDir) return globalText ? { kind: 'global', text: globalText } : null;
+    const legacyText = renderLegacyNotice(legacyDir);
+    return { kind: 'legacy', text: globalText ? `${legacyText}\n\n${globalText}` : legacyText, dir: legacyDir };
+  }
+  const index = await readIndex(memDir);
+  if (index === null) return globalText ? { kind: 'global', text: globalText, dir: memDir } : null;
+  const text = renderInjection(index, memDir, injectMaxChars);
+  if (!text) return globalText ? { kind: 'global', text: globalText, dir: memDir } : null;
+  return { kind: 'recall', text: globalText ? `${text}\n\n${globalText}` : text, dir: memDir };
+}
+
+/**
  * 插件入口。Config（cordis.patch.yml 用户层可覆盖，键见 README）：
  * - memoryRoot: string    记忆根目录（缺省探测：~/.claude/projects → ~/.dsh/memory/projects）
  * - journalDir: string    JSONL 日志目录（缺省 ~/.dsh/memory/journal）
  * - injectMaxChars: number  注入索引的最大字符数（缺省 4000）
+ * - globalHabitsMaxChars: number 全局习惯注入段最大字符数（P0-4；缺省 600，0=禁用）
  * - extractEnabled: boolean M2 全自动提取开关（缺省 true）
  * - extractIdleMs: number   会话空闲多久后唤醒提取轮（缺省 180000 = 3 分钟）
  * - extractMinTurns: number 轮数闸：至少观测到几轮对话才布防提取（缺省 1；调大省 token 但短会话可能漏）
@@ -111,9 +167,12 @@ export function apply(ctx, config = {}) {
   const root = typeof config.memoryRoot === 'string' && config.memoryRoot ? config.memoryRoot : detectDefaultRoot();
   const journalDir = typeof config.journalDir === 'string' && config.journalDir ? config.journalDir : undefined;
   const injectMaxChars = Number.isFinite(config.injectMaxChars) && config.injectMaxChars > 0 ? config.injectMaxChars : DEFAULT_INJECT_MAX_CHARS;
+  const globalHabitsMaxChars = Number.isFinite(config.globalHabitsMaxChars) && config.globalHabitsMaxChars >= 0
+    ? config.globalHabitsMaxChars
+    : DEFAULT_GLOBAL_HABITS_MAX_CHARS;
   logger.info?.(`[project-memory] 记忆根目录：${root}`);
 
-  // —— US-1：会话启动自动注入（每会话一次；子代理与无 cwd 跳过）——
+  // —— US-1 + P0-4：会话启动自动注入（每会话一次；子代理与无 cwd 跳过；编排见 buildSessionInjection）——
   const injected = new Set();
   ctx.on('agent/created', async (payload) => {
     const agent = payload?.agent;
@@ -124,35 +183,19 @@ export function apply(ctx, config = {}) {
       const sessionId = agent.session.id;
       if (injected.has(sessionId)) return;
 
-      const memDir = await resolveMemoryDir(root, header.cwd);
-      if (!memDir) {
-        // 旧布局探测：根下 MEMORY.md（Claude Code 旧版布局）现役不可见 → 注入一次迁移提示
-        const legacyDir = await resolveLegacyMemoryDir(root, header.cwd);
-        if (!legacyDir) return; // 无记忆目录：静默跳过（US-1 验收第 2 条）
-        agent.inject({
-          id: randomUUID(),
-          role: 'user',
-          content: [{ type: 'text', text: renderLegacyNotice(legacyDir) }],
-          source: { kind: 'project-memory', form: 'legacy' },
-        });
-        injected.add(sessionId);
-        await createJournal({ journalDir, cwd: header.cwd })({ event: 'inject', form: 'legacy', session: sessionId, dir: legacyDir });
-        return;
-      }
-      const index = await readIndex(memDir);
-      if (index === null) return;
-
-      const text = renderInjection(index, memDir, injectMaxChars);
-      if (!text) return;
+      const plan = await buildSessionInjection({ root, cwd: header.cwd, injectMaxChars, globalHabitsMaxChars });
+      if (!plan) return; // 无记忆可注入：静默跳过（US-1 验收第 2 条）
 
       agent.inject({
         id: randomUUID(),
         role: 'user',
-        content: [{ type: 'text', text }],
-        source: { kind: 'project-memory', form: 'recall' },
+        content: [{ type: 'text', text: plan.text }],
+        source: { kind: 'project-memory', form: plan.kind },
       });
       injected.add(sessionId);
-      await createJournal({ journalDir, cwd: header.cwd })({ event: 'inject', session: sessionId, chars: text.length });
+      const record = { event: 'inject', form: plan.kind, session: sessionId, chars: plan.text.length };
+      if (plan.dir) record.dir = plan.dir;
+      await createJournal({ journalDir, cwd: header.cwd })(record);
     } catch (error) {
       logger.warn?.(`[project-memory] 注入失败（不影响会话）：${error?.message ?? error}`);
     }
@@ -162,7 +205,7 @@ export function apply(ctx, config = {}) {
   const statusWorkspaceJson = typeof config.statusWorkspaceJson === 'string' && config.statusWorkspaceJson
     ? config.statusWorkspaceJson
     : undefined;
-  for (const definition of buildMemoryTools({ root, journalDir, workspaceJsonPath: statusWorkspaceJson })) {
+  for (const definition of buildMemoryTools({ root, journalDir, workspaceJsonPath: statusWorkspaceJson, globalHabitsMaxChars })) {
     ctx.effect(() => ctx.tools.register(definition), `project-memory.register(${definition.name})`);
   }
 

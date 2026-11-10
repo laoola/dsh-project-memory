@@ -4,7 +4,12 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderInjection, renderLegacyNotice } from '../index.js';
+import { promises as fs } from 'node:fs';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { renderInjection, renderLegacyNotice, renderGlobalHabitsSection, buildSessionInjection } from '../index.js';
+import { writeGlobalHabits, writeMemory } from '../lib/store.js';
 
 const MEM = 'C:\\proj\\demo\\memory';
 
@@ -40,4 +45,41 @@ test('旧布局迁移提示：给出目录与目标 memory\\ 子目录', () => {
   assert.ok(notice.includes('D--old'));
   assert.ok(notice.includes('memory\\'), '应提示移入 memory 子目录');
   assert.ok(notice.includes('旧布局'));
+});
+
+// —— v0.3 P0-4 全局习惯注入 ——
+test('renderGlobalHabitsSection：无文件空串；0 预算禁用；剥 frontmatter；截断提示', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'pm-inj-'));
+  assert.equal(await renderGlobalHabitsSection(root, 600), '');
+
+  await writeGlobalHabits({ root, summary: 's', content: '- 习惯甲：先查记忆再动手' });
+  assert.equal(await renderGlobalHabitsSection(root, 0), '', '0=禁用');
+
+  const out = await renderGlobalHabitsSection(root, 600);
+  assert.ok(out.includes('全局工作习惯'));
+  assert.ok(out.includes('习惯甲'));
+  assert.ok(!out.includes('---'), 'frontmatter 应剥离');
+
+  const tiny = await renderGlobalHabitsSection(root, 20);
+  assert.ok(tiny.includes('已截断'), '超短预算应给出截断提示');
+});
+
+test('buildSessionInjection：仅全局→global-only；项目+全局→recall 拼尾；皆无→null；0 预算关全局段', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'pm-inj-'));
+  assert.equal(await buildSessionInjection({ root, cwd: 'D:\\nope', injectMaxChars: 4000, globalHabitsMaxChars: 600 }), null);
+
+  await writeGlobalHabits({ root, summary: 's', content: '- 全局习惯内容' });
+  const g = await buildSessionInjection({ root, cwd: 'D:\\nope', injectMaxChars: 4000, globalHabitsMaxChars: 600 });
+  assert.equal(g.kind, 'global');
+  assert.ok(g.text.includes('全局习惯内容'), '无项目索引的新项目也能拿到全局习惯');
+
+  await writeMemory({ root, cwd: 'D:\\proj', topic: 'a', summary: '项目条目', content: '内容。' });
+  const r = await buildSessionInjection({ root, cwd: 'D:\\proj', injectMaxChars: 4000, globalHabitsMaxChars: 600 });
+  assert.equal(r.kind, 'recall');
+  assert.ok(r.text.includes('项目条目'));
+  assert.ok(r.text.includes('全局习惯内容'), '全局段拼在项目注入尾部');
+
+  const r0 = await buildSessionInjection({ root, cwd: 'D:\\proj', injectMaxChars: 4000, globalHabitsMaxChars: 0 });
+  assert.equal(r0.kind, 'recall');
+  assert.ok(!r0.text.includes('全局工作习惯'), '0 预算不得注入全局段');
 });

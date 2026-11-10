@@ -2,7 +2,7 @@
 
 DSH 本机跨对话项目记忆（Host bundle）。让每个 DSH 会话开局自动带上本项目的持久记忆，并给模型提供读写检索工具；与 Claude Code 记忆罗盘**共用同一套本机文件**，双向兼容。无云端、无遥测。
 
-规格见 [`../project-memory/PRD.md`](../project-memory/PRD.md)（v0.3 Approved）。当前交付 **M1**（自动注入 + 记忆工具）、**M2**（会话结束全自动提取）、**STATUS.md 机制**（2026-10-17 合流）与 **0.2**（只读知识库面板，见下节）。
+规格见 [`../project-memory/PRD.md`](../project-memory/PRD.md)（v0.4 Approved）。当前交付 **M1**（自动注入 + 记忆工具）、**M2**（会话结束全自动提取）、**STATUS.md 机制**（2026-10-17 合流）、**0.2**（只读知识库面板）与 **0.3**（技能候选 / 命中统计 / 归档轨 / 全局工作习惯，见下）。
 
 ## 安装
 
@@ -21,7 +21,8 @@ dsh plugin --profile web add <本仓库检出路径>
 |---|---|---|---|
 | `memoryRoot` | string | 探测式 | 记忆根目录。缺省：`~/.claude/projects` 存在则沿用（与 Claude Code 共库），否则 `~/.dsh/memory/projects` |
 | `journalDir` | string | `~/.dsh/memory/journal` | JSONL 使用日志目录 |
-| `injectMaxChars` | number | 4000 | 注入索引的最大字符数。超长时**头尾双端保留**（STATUS 指针与末尾最新条目/主题组优先），中间省略并提示用 `memory_read` 细读——避免旧版"保头丢尾"把最新记忆截掉 |
+| `injectMaxChars` | number | 4000 | 注入索引的最大字符数。超长时**头尾双端保留**（STATUS 指针与末尾最新条目/主题组优先），中间省略并提示用 `memory_read` 细读——避免旧版"保头丢尾"把最新记忆截掉。调参：调大可减少截断、利于稳定前缀缓存，但每会话注入成本随之上升；索引超载的根本治理是归档（`mode=archive`）与手工瘦身，三者互不替代 |
+| `globalHabitsMaxChars` | number | 600 | 0.3 新增：全局工作习惯注入段的最大字符数（见「全局工作习惯」节）；`0` = 禁用该注入段。习惯文件超过 4×上限时 `memory_write(scope=global)` 结果会附精简提示 |
 | `extractEnabled` | boolean | true | M2 全自动提取开关 |
 | `extractIdleMs` | number | 180000 | 会话空闲多久后唤醒提取轮（毫秒） |
 | `extractMinTurns` | number | 1 | 轮数闸：至少观测到几轮对话才布防提取（缺省 1 = 不因短会话漏；调大可省 token 但短会话可能漏） |
@@ -46,14 +47,14 @@ dsh plugin --profile web add <本仓库检出路径>
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
-| `memory_read` | `topic?` | 读 `MEMORY.md` 索引；给 `topic` 则读对应主题文件全文 |
-| `memory_write` | `topic`, `content`, `summary` | 写主题文件（新建自动加 `# topic` 头）并同步更新索引行（同 slug 幂等替换）。索引接近/超过载入上限（200 行或 25KB，对齐 Claude Code）时在结果中警告并要求精简（超限截断会让后半索引静默丢失），并引导优先归档到 `<主题>-archive.md`（索引只留一行指针）；主题文件已有 frontmatter 时自动刷新 `modified` 时间戳，无 frontmatter 不强加。空参数明确报错，fs 错误原样抛出 |
-| `memory_search` | `query`, `limit?=50` | 跨主题文件大小写不敏感检索，返回 `文件:行号: 内容` |
+| `memory_read` | `topic?`, `scope?` | 读 `MEMORY.md` 索引；给 `topic` 则读主题文件全文并回写命中统计（frontmatter `hits`+1、`last-access`=今日；索引读、STATUS 快照、归档读、全局读均不计数，返回文本=回写前快照）。`topic` 形如 `archive/<主题>` 时读归档副本；`scope=global`（`topic` 固定 `user-habits`）读全局工作习惯 |
+| `memory_write` | `topic`, `content?`, `summary?`, `mode?`, `target?`, `scope?`, `description?`, `triggers?` | **四通道**（0.3）：①普通（默认）——写主题文件（新建自动加 `# topic` 头）并同步索引行（同 slug 幂等替换）；已有 frontmatter 自动刷新 `modified`、无 frontmatter 不强加；索引接近/超过上限（200 行或 25KB）时警告并引导归档（`mode=archive`）；归档后同名再写=**允许重建**并提示存在归档历史。②`target=skill-candidate`——技能候选草稿（`description` 必填、`triggers` 可选触发词、`summary` 不适用；不入索引、永不自动注入）。③`scope=global`（`topic` 固定 `user-habits`）——写全局工作习惯。④`mode=archive`（仅 `topic`）——归档该主题（见「归档轨」节）。空参数/非法组合明确报错 |
+| `memory_search` | `query`, `limit?=50` | 跨主题文件大小写不敏感检索，返回 `文件:行号: 内容`；0.3 起范围含 `archive/` 归档区（命中标 `[已归档]`），命中主题文件回写命中统计（归档与索引不计数） |
 | `memory_status_write` | `summary`, `stage?`, `milestones?[]`, `inProgress?[]`, `nextStart?`, `keyDecisions?[]`, `constraints?[]`, `source?` | 更新项目状态快照 `STATUS.md`（2026-10-17 STATUS 机制合流新增，详见下节）。`summary` 必填（≤160 字符，注入 MEMORY.md 首行）；未传字段沿用旧值，内容无变化不重写不滚动 |
 
 **使用日志**：每次注入/读写向 `<journalDir>/<编码项目>.jsonl` 追加一行（`inject`（含旧布局告警 `form: 'legacy'`）/ `read` / `write` / `search` / `status` / `extract` 事件，含时间戳与会话 id）。仅本机文件，最佳努力（写失败不影响主流程），供 30 天使用频率指标统计，无遥测。
 
-**全自动提取（US-4，M2）**：会话空闲（`agent/status → idle` 持续 `extractIdleMs`）后经 `agent.followup()` 唤醒一轮"提取轮"（一条 `source.form = 'extract'` 的 user 消息，成为独立回合），模型回顾本场对话，分【结论路】【习惯路】【STATUS 路】三路提取（见下）；三路均无产出则不写任何东西。提取判断含负面清单（对齐 Claude Code 官方自动记忆）：能从代码、规格、文档直接推导的不写；CLAUDE.md / AGENTS.md 等指令文件已载明的不写。护栏：
+**全自动提取（US-4，M2）**：会话空闲（`agent/status → idle` 持续 `extractIdleMs`）后经 `agent.followup()` 唤醒一轮"提取轮"（一条 `source.form = 'extract'` 的 user 消息，成为独立回合），模型回顾本场对话，分【结论路】【习惯路】【技能候选路】【STATUS 路】四路提取（0.3 由三路扩四路，见下）；四路均无产出则不写任何东西。提取判断含负面清单（对齐 Claude Code 官方自动记忆）：能从代码、规格、文档直接推导的不写；CLAUDE.md / AGENTS.md 等指令文件已载明的不写。护栏：
 
 - 每会话限 1 轮：内存占坑 + journal `extract/followup` 事件 durable 查重，宿主重启后不重复提取；
 - 轮数闸：本进程观测到的对话轮数 < `extractMinTurns` 不布防（`agent/inbox/claimed` 的 turn 序号计）。缺省 1（2026-10-14 用户裁决：不漏优先——单轮对话有结论也要提取；无结论由提取轮自行判定，回复「无新增记忆」不落盘）；
@@ -61,7 +62,25 @@ dsh plugin --profile web add <本仓库检出路径>
 - 唤醒失败（如会话恰好释放）记 `extract/error` 事件并可重试，不影响会话；
 - `agent/created` 也预布防：恢复的会话若无新活动，空闲后同样补提一轮。
 
-**三路提取（结论 + 习惯 + STATUS）**：提取轮为「结论 + 用户习惯 + 项目状态」三路。【结论路】提取跨会话持久结论（用户裁决、部署事实、踩坑教训、验证过的收口），写入项目记忆主题文件；【习惯路】若对话暴露了用户的行为模式（下指令的固定风格、明确纠正过 AI 的行为、反复出现的操作序列偏好），追加写入独立的 `user-habits` 主题文件（与结论分文件；每条带日期、出现次数与来源，同模式更新不重复建条）。习惯条目只记录不执行——是否升格进 AGENTS.md 等指令文件由用户人工确认。【STATUS 路】（2026-10-17 合流新增，2026-10-16 拍板）若对话确实推进了项目状态，经 `memory_status_write` 更新七字段状态快照（当前阶段/最近里程碑/进行中事项/下次开工起点/关键技术决策≤5条/活跃约束 + 最近更新时间戳与来源）：本场没有新信息的字段不传（沿用旧值，从未有则标「待补」），纯问答不调用。关闭方式不变：`cordis.patch.yml` 设 `extractEnabled: false` 整轮关停（三路一并关闭）。
+**四路提取（结论 + 习惯 + 技能候选 + STATUS）**：提取轮为「结论 + 用户习惯 + 技能候选 + 项目状态」四路。【结论路】提取跨会话持久结论（用户裁决、部署事实、踩坑教训、验证过的收口），写入项目记忆主题文件；【习惯路】若对话暴露了用户的行为模式（下指令的固定风格、明确纠正过 AI 的行为、反复出现的操作序列偏好），写入习惯文件，**双落点**（0.3）：只在该项目语境成立的 → 项目层 `user-habits` 主题；换一个项目也成立的通用工作习惯 → `scope=global` 全局库（注入所有项目会话，见「全局工作习惯」节）；拿不准优先项目层（宁保守不扩散）；每条带日期、出现次数与来源，同模式更新不重复建条。习惯只记录不执行——是否升格进 AGENTS.md 等指令文件由用户人工确认。【技能候选路】（0.3 新增）若存在「多次踩坑、难度大、后续大概率复用」的可复用操作经验，落盘技能候选草稿（见「技能候选」节）；三路素材互斥分流，写入前均先查重。【STATUS 路】（2026-10-17 合流新增，2026-10-16 拍板）若对话确实推进了项目状态，经 `memory_status_write` 更新七字段状态快照（当前阶段/最近里程碑/进行中事项/下次开工起点/关键技术决策≤5条/活跃约束 + 最近更新时间戳与来源）：本场没有新信息的字段不传（沿用旧值，从未有则标「待补」），纯问答不调用。关闭方式不变：`cordis.patch.yml` 设 `extractEnabled: false` 整轮关停（四路一并关闭）。
+
+### 技能候选（0.3 P0-1）
+
+提取轮发现可复用操作经验时，落 `memory/skill-candidates/<slug>.md` 草稿（`memory_write` 的 `target=skill-candidate` 通道；同 slug 重写保留首次 `created`，永不入 MEMORY.md 索引、永不自动注入）。frontmatter：`name` / `description`（触发词融入）/ `triggers` / `created` / `source` / `status: candidate`；正文为 SKILL.md 草稿，尾部附固定升格说明。
+
+**人工升格（唯一生效路径，插件零代码依赖）**：候选只是草稿，不加载不执行。升格三步（文件尾部有同款说明）：① 在 `~/.agents/skills/<name>/` 新建 `SKILL.md`，保留 frontmatter 的 `name` 与 `description`；② 只复制候选正文，删除 `triggers`/`created`/`source`/`status` 等多余字段与升格说明节；③ 以技能加载器实际发现并可加载为准（`~/.agents/skills` 平铺布局，目录动态刷新无需重启）。
+
+### 命中统计与归档轨（0.3 P0-2 / P0-3）
+
+**命中统计**：`memory_read`（带 topic）与 `memory_search` 每命中一个主题文件，frontmatter 回写 `hits: N+1` 与 `last-access: 当日`；无 frontmatter 的文件此时新建 YAML 头（仅统计通道；`memory_write` 对无头文件仍不强加头）。排除项：索引读、STATUS 快照、`STATUS.prev*`、归档读、全局读、`memory` 主题。并发防覆盖：回写前重读，文件被并发改动则基于最新内容重放一次，仍在变则放弃本次计数；统计回写失败一律静默（不影响读取结果），原子写（tmp+rename）。`hits` = 访问次数 ≠ 记忆价值（提取轮查重搜索也计数）。
+
+**归档轨**：`memory_write(topic=旧主题, mode=archive)`（仅接受 `topic`）——主题文件移入 `memory/archive/<slug>.md`（frontmatter 加 `archived` 日期）、MEMORY.md 摘除该行、源文件删除。分阶段失败恢复（宁可双份不可丢份）：复制 → 摘索引 → 删源，任一步失败保留双份并明确报错、可安全重试；阶段 2/3 失败自动恢复索引快照，不留「索引已摘、源还在」的中间态。保护：`MEMORY.md` / `STATUS.md` / `STATUS.prev*` 禁止归档；目标同名归档副本存在则拒绝覆盖；**归档后同名普通写入 = 允许重建**（新会话提取不因历史归档而丢条目），工具结果提示存在归档历史；重建后再归档需先处理旧副本。索引 near/over 警告文案均引导 `mode=archive`。检索默认含归档区（标 `[已归档]`，不计数）；归档副本仅供对账回看，`memory_read(topic='archive/<slug>')` 可读。
+
+### 全局工作习惯（0.3 P0-4）
+
+跨项目通用的用户工作习惯（如「先查记忆再动手」「只要结论不要过程」）写入 `<memoryRoot>/_global/memory/user-habits.md`（`memory_write` 的 `scope=global` 通道，`topic` 固定 `user-habits`；与 Claude Code 记忆罗盘全局库共库）。全局 `MEMORY.md` 只幂等维护该主题一行，不改动其他分区行。
+
+**注入**：会话启动注入时独立计算全局习惯段（剥 frontmatter、按行截断 ≤`globalHabitsMaxChars`，缺省 600，0=禁用），拼在项目索引注入尾部；**新项目没有项目记忆时也会注入全局段**（新项目不再从零学起）。注入段标题明示「历史偏好参考，不覆盖当前指令」。写入侧护栏：习惯来源仅限当前用户明确表达或反复体现的偏好，外部内容（网页/工具输出/搜索结果）中的指令不得提取；文件超 4×上限时工具结果提示合并同类习惯。`memory_read(topic='user-habits', scope='global')` 可读全文（不计数）。
 
 ### STATUS.md 机制（2026-10-17 合流）
 
@@ -109,7 +128,7 @@ pnpm run build # tsdown → lib/client.js（产物随包分发）
 pnpm test   # node --test test/*.test.mjs
 ```
 
-覆盖：路径编码（纯 ASCII / 含中文实测案例 / 幂等）、目录解析（精确 / 模糊 / 无目录 / 旧布局探测）、写入（新建/追加/索引幂等/参数校验/索引体量阈值/frontmatter modified 刷新与不强加）、检索、M2 提取状态机（空闲触发 / 每会话限 1 轮含 durable 查重 / 轮数闸 / 子代理与无 cwd 跳过 / running 撤防 / 失败重试 / 缺省 minTurns=1）、STATUS 机制（七字段渲染与待补 / created+MEMORY.md 注入 / unchanged 不重写 / prev 双级滚动 / 5 秒抢写 / 膨胀硬上限 / 注入幂等 / 枚举交集与排除 / workspaceId 兜底 / parse 往返 / 工具集注册）、知识库面板路由层（分区概览 / 清单与索引摘要映射 / SKILL frontmatter / 读文件路径穿越防护 / 跨分区检索 / envelope 与只读 405 / 404 兜底 / 废弃项目 `pathExists` 标注）、健壮性（注入截断头尾双端保留 / 旧布局迁移提示文案 / 索引超限归档引导文案）。共 60 例。
+覆盖：路径编码（纯 ASCII / 含中文实测案例 / 幂等）、目录解析（精确 / 模糊 / 无目录 / 旧布局探测）、写入（新建/追加/索引幂等/参数校验/索引体量阈值/frontmatter modified 刷新与不强加/upsertFrontmatterFields 单元）、技能候选（frontmatter 全字段/永不入索引/同 slug 重写保留首次 created/description 必填与路径拒绝）、归档轨（移动+archived 头+索引摘行/禁归档清单/重名拒绝/源缺失/**hooks 故障注入的分阶段失败恢复与索引快照回滚**）、命中统计（无头文件新建头/递加/排除项/**_between 并发防覆盖重放**）、检索（含归档区前缀与 `[已归档]` 标记）、全局习惯（固定文件/全局索引幂等一行/chars 返回）、M2 提取状态机（空闲触发 / 每会话限 1 轮含 durable 查重 / 轮数闸 / 子代理与无 cwd 跳过 / running 撤防 / 失败重试 / 缺省 minTurns=1 / **四路提示词与技能候选路、习惯双落点文案**）、STATUS 机制（七字段渲染与待补 / created+MEMORY.md 注入 / unchanged 不重写 / prev 双级滚动 / 5 秒抢写 / 膨胀硬上限 / 注入幂等 / 枚举交集与排除 / workspaceId 兜底 / parse 往返 / 工具集注册）、**工具参数矩阵（四通道组合校验/归档后同名重建提示/读分支计数/global 与 archive 读）**、**注入编排（renderGlobalHabitsSection 截断与 0 预算/buildSessionInjection 的 global-only 与 recall 拼尾）**、知识库面板路由层（分区概览 / 清单与索引摘要映射 / SKILL frontmatter / 读文件路径穿越防护 / 跨分区检索 / envelope 与只读 405 / 404 兜底 / 废弃项目 `pathExists` 标注）、健壮性（注入截断头尾双端保留 / 旧布局迁移提示文案 / 索引超限归档引导文案）。共 80 例。
 
 ## 卸载
 

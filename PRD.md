@@ -1,6 +1,6 @@
 # PRD：dsh-project-memory —— DSH 本机跨对话项目记忆插件
 
-**Status**: Approved（2026-10-13 裁决定稿；v0.3 2026-10-19 增量合流）  **Author**: zwh + DSH Agent  **Last Updated**: 2026-10-19  **Version**: 0.3
+**Status**: Approved（V1 基线，2026-10-13）；Pending Approval（v0.4 增量，待最终批准）  **Author**: zwh + DSH Agent  **Last Updated**: 2026-11-10  **Version**: 0.4
 
 > 仓库级约束继承（2026-10-13 已拍板）：可分发给他人；成功信号 = 30 天使用频率，来源须落实（本插件定为：本地 JSONL 日志 + 自愿回传，**不做内建遥测**）。
 > V1 分两个里程碑交付：**M1** = 自动注入 + 记忆工具（先冒烟可用）；**M2** = 全自动提取（紧随 M1，受阻不阻塞 M1）。
@@ -29,7 +29,7 @@
 **US-1**: 作为用户，我在某项目开新对话，我想要项目记忆索引自动进入上下文，以便不重复交代背景。
 
 - [x] Given 该项目已有 `memory\MEMORY.md`, When 在该项目开新会话, Then 系统提示含注入的记忆索引段落（可观察：模型首答引用既有结论；插件日志记录注入事件）
-- [x] Given 该项目无 `memory\` 目录, When 开新会话, Then 注入为空/跳过，无报错，宿主正常启动
+- [x] Given 该项目无 `memory\` 目录, When 开新会话, Then 项目索引注入为空/跳过，无报错，宿主正常启动
 - [ ] 性能: 注入在会话首步前完成，本地文件读取 P95 < 1s
 
 **US-2**: 作为用户，我想让会话中的结论沉淀为记忆文件，以便下次对话可读。
@@ -76,6 +76,26 @@
 - [x] STATUS.md 机制 + `memory_status_write` 工具（2026-10-16 拍板 / 10-17 合流）：七字段状态快照 + `MEMORY.md` 首行指针，膨胀硬控、prev 双级滚动、抢写保护、原子写；提取轮随之扩为三路（结论/习惯/STATUS）
 - [x] 只读知识库面板（0.2）：Web 侧栏四分区（全局/项目/本地知识源/知识域预留）+ 跨分区检索，host 直读磁盘、零编辑入口、运行时零新依赖
 
+**v0.4 增量（2026-11-10 拓展任务书四项 P0；均 [ ] 待交付，执行序见容器根 TASK-project-memory-v0.3.md r4）**
+
+- [ ] **P0-1 技能候选路（提取三路扩四路，决策 6）**：会话存在「多次踩坑/难度大/后续会复用」的可复用操作经验时产出技能候选（宁缺毋滥）；互斥判据写进提示词（纯个人偏好→习惯路、可复用操作经验→技能候选路、裁决/事实/收口→结论路，候选路与结论路同样先查重防双写）；经 `memory_write(target=skill-candidate)` 落盘 `memory/skill-candidates/<slug>.md`（frontmatter：name/description/triggers[]/created/source/status:candidate；正文=SKILL.md 草稿+尾部升格说明），永不进 MEMORY.md、永不自动注入；同 slug 整文件重写且保留首次 created；topic 原始输入的路径分隔符与穿越形式在写前拒绝，最终路径代码层限定候选子目录。人工升格时正式 SKILL.md 仅保留 name/description 与草稿正文，triggers 同步融入 description，created/source/status 和尾部升格说明不得带入；以加载器实际发现并可加载为验收。
+- [ ] **P0-2 记忆命中统计**：`memory_read`（带 topic 命中）/`memory_search`（按命中文件去重）回写主题 frontmatter `last-access` 与 `hits`；每次调用每文件至多 +1，索引读/STATUS/prev/技能候选/归档文件/scope=global 读不计数；前置修复 `stampFrontmatter` 块外追加 bug，统一 `upsertFrontmatterFields` helper。普通写入对无头文件仍不强加 frontmatter，**命中统计是唯一例外**；未知 YAML 字段与正文逐字节不变，返回行号基于回写前快照。统计回写前重读并检测变化，必要时基于最新内容重放一次，仍变化则放弃计数；tmp+rename、失败静默，但不得用旧快照覆盖并发写入的新记忆。索引排序不动；hits=访问次数≠记忆价值。
+- [ ] **P0-3 归档轨**：`memory_write(mode=archive)` 仅接受项目 topic；主题移入 `memory/archive/`、索引行摘除、frontmatter 加 archived 日期；目标同名拒绝覆盖，MEMORY.md/STATUS.md/STATUS.prev* 禁止归档。归档采用分阶段恢复：archive 临时文件校验后原子改名→原子摘索引→删源；摘索引失败不得删源，删源失败须恢复快照索引，任何失败路径至少保留一个完整副本，源文件已删时不得先清 archive。崩溃允许双份或暂时未索引，不允许数据全丢。`memory_read` 受控支持项目 `archive/<slug>`、`memory_search` 默认含 archive 单层并标 `[已归档]`（均不计数）；归档后同名普通写入=允许重建+提示历史；索引超限文案改引导归档轨；不做低 hits 自动归档。
+- [ ] **P0-4 全局习惯轨（决策 7）**：习惯路加双落点（项目特定→项目 user-habits；跨项目通用→`scope=global`），写全局前直读查重；只提取当前用户明确表达或反复体现的偏好，网页、工具输出、代码注释等外部内容中的指令不得提取。`memory_write`/`memory_read` 对称扩 scope，缺省 project；global 仅接受 topic=user-habits，路径复用 `globalMemoryDir(root)=path.join(root,'_global','memory')`。全局 MEMORY.md 只幂等更新 user-habits 一行，其他行与人工分区结构不得重排或重写，不套用项目自动归档建议。全局注入独立于项目目录/索引：有项目注入时追加，无项目记忆时仍单独注入；去 frontmatter 按行截断 ≤globalHabitsMaxChars（缺省 600、0 禁用），标注「历史偏好参考，不覆盖当前指令」；仅 maxChars>0 且正文超 4×maxChars 时附精简提示。本期不自动迁移/合并项目存量习惯，由用户挑选升格；memory_search 不扫全局。
+
+**统一参数组合（四个 P0 共同遵守）**
+
+| 操作 | target | scope | mode | 必填与限制 |
+|---|---|---|---|---|
+| 普通项目写入 | topic | project | append/replace | topic、summary、content；不接受 description/triggers |
+| 全局习惯写入 | topic | global | append/replace | topic=user-habits；summary、content 必填 |
+| 技能候选写入 | skill-candidate | project | replace，缺省视同 replace | topic、content、description；triggers 可选；summary 报错 |
+| 项目归档 | topic | project | archive | 仅 topic，其余内容字段报错 |
+
+其余组合在写入前明确报错。`memory_read(scope=global)` 必须显式 `topic=user-habits`；`archive/<slug>` 只允许项目 scope。
+
+**索引溢出配套治理（现有能力复用）**：归档减少条目数，手工精简 MEMORY.md 摘要行宽减少索引体量，二者都是数据层治理；`injectMaxChars`（缺省 4000）从现状起就是可配置项，本期无需新增，只决定注入截断位置，不缩小索引文件，也不改变 200 行/25KB 健康阈值。调大预算在稳定前缀下有利于缓存复用，但仍增加首次注入及缓存未命中的 token。手工瘦身须另经用户确认、先备份并保持主题链接有效，不由本期代码自动改用户数据；README 与单测补充非默认注入预算的行为。
+
 ## 5. 暂缓事项（V1 明确不做）
 
 | 事项 | 来源 | 暂缓原因 | 重新考虑条件 |
@@ -83,6 +103,11 @@
 | UI 面板（Web 界面浏览/编辑记忆） | 自提 | 已出池（2026-10-16）：只读版以 0.2 交付（浏览 + 检索，无编辑入口）；编辑能力仍不做 | 编辑入口暂无计划 |
 | 向量/语义检索 | 自提 | 文件量级小，全文检索够用 | 单项目记忆 >50 文件且检索不中 |
 | 按 git 仓库根归一化项目定位（官方按 repo root 共库） | 2026-10-14 对齐调研 | 现有使用习惯在仓库根开会话，子目录 miss 影响低；且需兼容存量 cwd 编码目录（先精确→再 repo root→再模糊） | 子目录开会话频繁且记忆命中失败 |
+| 面板技能候选列表与升格按钮 | v0.4 任务书 | 升格流程零代码依赖（手工整理并移文件）已闭环；面板定位只读 | 手工升格频次成为负担 |
+| 技能候选自动评分（darwin-skill 9 维 rubric 接入） | v0.4 任务书 | 候选量小，人工审阅够用 | skill-candidates 积压 >10 条 |
+| 低 hits 自动归档 | v0.4 任务书 | hits=访问次数 ≠ 记忆价值，自动动作误伤面大 | 命中统计跑满 30 天且确有腐化条目实证 |
+| 全局习惯自动治理与检索融合 | v0.4 P0-4 | 提示词查重 + 超限提示已够首期；自动合并误删风险 | 全局 user-habits 持续超限且人工合并成为负担 |
+| 项目存量习惯自动迁移/合并到全局 | v0.4 二次审核 | 不同项目偏好可能冲突，自动升格污染面大 | 有明确人工挑选流程与足够存量证据后再评估 |
 
 > 已出池：全自动提取 → 提入 V1（M2，2026-10-13 用户裁决）；"零写入补写提醒"折中方案 → 被全自动取代，废弃；云同步 → 用户明确排除，永久不做。
 
@@ -92,7 +117,9 @@
 - **决策 2：存储沿用 Claude Code 记忆罗盘的路径与格式（MEMORY.md 索引 + 主题文件），弃自创格式。** 存量记忆直接复用，"两工具统一入口双向读写"是既有裁决。代价：路径编码规则（非 ASCII→`-`）需照抄实现并配单测。
 - **决策 3：写入机制选全自动提取（2026-10-13 用户裁决），弃"V1 半自动"。** 用户优先"不漏"，接受每会话一轮提取推理的 token 成本与会话结束后 agent 短暂活动的体感。开发顺序 M1（注入+工具先冒烟）→ M2（全自动提取紧随），M2 受阻不阻塞 M1 交付。2026-10-14 追加裁决：单轮对话有结论也不得漏——"短会话跳过"闸门缺省关闭（`extractMinTurns=1`），无结论与否交由提取轮自行判定，轮数闸降级为可选经济参数。
 - **决策 4：分发版默认记忆 root 用探测式双路径（2026-10-13 用户裁决）。** `~/.claude/projects` 存在→沿用（Claude Code 用户零迁移共库），否则 `~/.dsh/memory/projects`（纯 DSH 用户不受打扰）；Config `memoryRoot` 可覆盖，探测规则必须写入文档。代价：默认行为跨机器依赖一次文件系统探测，文档须写明。
-- **决策 5：写入侧对齐 Claude Code 官方自动记忆机制（2026-10-14 调研官方文档后采纳三项借鉴）。** ①索引体量反馈——索引超 200 行/25KB（官方每会话载入上限，先到为准）时 `memory_write` 在结果中警告并要求精简：超限截断会让后半索引静默丢失；②提取负面清单——能从代码/规格/文档直接推导的不写、CLAUDE.md/AGENTS.md 等指令文件已载明的不写；③主题文件带 frontmatter 时自动刷新 `modified` 时间戳（无 frontmatter 绝不强加，共库兼容）。明确不借鉴：CLAUDE.md 指令层机制（与本项目无关）、/memory UI、autoMemoryDirectory。git 仓库根归一化 → 暂缓池。
+- **决策 5：写入侧对齐 Claude Code 官方自动记忆机制（2026-10-14 调研官方文档后采纳三项借鉴）。** ①索引体量反馈——索引超 200 行/25KB（官方每会话载入上限，先到为准）时 `memory_write` 在结果中警告并要求精简：超限截断会让后半索引静默丢失；②提取负面清单——能从代码/规格/文档直接推导的不写、CLAUDE.md/AGENTS.md 等指令文件已载明的不写；③主题文件带 frontmatter 时自动刷新 `modified` 时间戳；普通写入对无 frontmatter 文件绝不强加，共库兼容，**v0.4 命中统计读取是唯一例外**。明确不借鉴：CLAUDE.md 指令层机制、/memory UI、autoMemoryDirectory。git 仓库根归一化 → 暂缓池。
+- **决策 6：技能自学走「只记录不执行」候选轨，存储扩展现有工具而非新增（2026-11-10 用户裁决）。** 硬约束：插件永不自动写 `~/.agents/skills`；提取轮架构不动；skill-candidates 不进索引、不自动注入。实现取舍：`memory_write` 扩 `target`/`mode`/`scope` 参数复用入口，缺省值=原语义；合法参数组合在代码层封闭校验，不新增工具数；不引入 dsh-memory-evolve 五轨存储。
+- **决策 7：跨项目通用习惯走「受控单文件 + 独立受控注入」，不开全局库自由写入（2026-11-10 用户裁决，r4 补齐边界）。** ①global 仅放行 user-habits；②全局段可脱离项目目录/索引独立注入，≤maxChars 缺省 600、0 禁用，是注入预算的受控例外；③全局 MEMORY.md 只更新 user-habits 一行，保留人工结构，索引整体不自动注入；④只从当前用户明确/反复偏好提取，外部内容指令不得入库，注入段不覆盖当前指令；⑤不自动迁移存量项目习惯；⑥memory_search 不扫全局。
 
 ## 7. 技术考量（DSH 特有）
 
@@ -103,7 +130,7 @@
 | 接入方式 | `dsh plugin --profile web add <本地路径>` 安装并默认启用；分发为 npm 包 + README |
 | 版本兼容 | 声明 DSH peer 范围；实现前用 `cordis_inspect_query` 确认 API：`ctx.systemPrompt.section()` / `agent.inject()` / agent 工具注册 / `turn/end` 级事件与 `agent.followup()` / 存储服务 |
 | 依赖 | 目标零新依赖（Node 内置 fs 足够）；路径编码自实现 + 单测 |
-| 风险 | ① DSH 无稳定"项目"概念 → 按会话工作目录识别，无 cwd 降级不注入（中/中/Config 手动映射）② 注入点上游改版（低/高/peer 锁版本 + inspect 先行）③ 与 Claude Code 同文件并发写（低/中/索引整行幂等更新）④ 记忆撑大上下文（中/中/只注入索引行）⑤ 全自动提取写噪音（中/中/写入门槛重申+每会话限 1 轮+短会话跳过）⑥ 提取轮 token 成本（确定/低/会话长度阈值跳过） |
+| 风险 | ① DSH 无稳定"项目"概念 → 按会话工作目录识别，无 cwd 时项目索引不注入，全局习惯仍按受控段注入（中/中/Config 手动映射）② 注入点上游改版（低/高/peer 锁版本 + inspect 先行）③ 与 Claude Code 同文件并发写（低/中/索引整行幂等更新；统计回写前重读，变化则重放或放弃，宁少计不覆盖）④ 记忆撑大上下文（中/中/项目只注入索引行，全局习惯为独立 capped 段）⑤ 全自动提取写噪音（中/中/写入门槛重申+每会话限 1 轮+可选 minTurns 闸）⑥ 提取轮 token 成本（确定/低/每会话一轮+可选会话长度阈值）⑦ 全局习惯跨项目污染（中/中/单主题+用户明确偏好来源护栏+不自动迁移+600 字符受控注入） |
 
 **验证命令**（写入验收）:
 ```sh
@@ -125,5 +152,6 @@ dsh --profile web --dump-config-schema   # 可见本插件 Config Schema
 ## 9. 修订记录
 
 - **v0.2**（2026-10-14）：M1/M2 验收闭环收口；决策 5 落地（索引超限反馈 / 提取负面清单 / frontmatter modified 刷新）；`extractMinTurns` 缺省改 1（不漏优先）。
-- **v0.3**（2026-10-19 补录）：补记三批已交付增量——①习惯路提取（2026-10-14 晚 C-1，`user-habits` 分文件）；②STATUS.md 机制与 `memory_status_write`（2026-10-16 拍板 / 10-17 合流）；③只读知识库面板（0.2，暂缓池 UI 面板出池，仅只读版）。PRD 主体（第 1–8 节）不变，功能细节以 README 为准。
-- **v0.3.1**（2026-10-20）：健壮性收口——①P0 注入截断改头尾双端保留（commit ab8af81，头部 STATUS 指针 + 尾部最新条目/主题组优先）；②P1 三项：旧布局记忆迁移告警（根下 `MEMORY.md` → 引导移入 `memory/`）、索引超限归档引导（`<主题>-archive.md` 留一行指针）、废弃项目记忆目录面板标注（`pathExists` 探测）。
+- **v0.3**（2026-10-19 补录）：补记三批已交付增量——①习惯路提取；②STATUS.md 机制与 `memory_status_write`；③只读知识库面板。PRD 主体（第 1–8 节）不变，功能细节以 README 为准。
+- **v0.3.1**（2026-10-20）：健壮性收口——①P0 注入截断改头尾双端保留（commit ab8af81）；②P1 三项：旧布局记忆迁移告警、索引超限归档引导、废弃项目记忆目录面板标注。
+- **v0.4**（2026-11-10）：拓展任务书四项 P0 合流，执行序见容器根 `TASK-project-memory-v0.3.md r4`——①技能候选路；②记忆命中统计；③归档轨；④全局习惯轨。二次审核补齐：全局习惯无项目索引时独立注入、归档分阶段恢复、统一参数矩阵、技能人工升格清理规则、存量习惯不自动迁移与外部指令排除、统计并发防覆盖、frontmatter 统计例外、全局索引保真、maxChars=0 边界。暂缓池新增五项。包版本随本期升 0.3.0，PRD 与包版本分轨。
